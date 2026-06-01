@@ -7,7 +7,7 @@ import zipfile
 import os
 import sys
 import warnings
-
+from pathlib import Path
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
 # --- Configuration ---
@@ -39,7 +39,8 @@ def _fetch_data() -> pd.DataFrame:
     """Fetches the bike sharing dataset and returns a DataFrame."""
     print("Fetching data from UCI archive...")
     try:
-        content = requests.get(DATASET_URL, verify=False, timeout=60).content
+        #content = requests.get(DATASET_URL, verify=False, timeout=60).content
+        content = Path("../data/bike.zip").read_bytes()
         with zipfile.ZipFile(io.BytesIO(content)) as z:
             df = pd.read_csv(z.open("hour.csv"), header=0, sep=',', parse_dates=[DTEDAY_COL_NAME])
         print("Data fetched successfully.")

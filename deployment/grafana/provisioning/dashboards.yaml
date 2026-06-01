@@ -1,0 +1,10 @@
+# A REVOIR
+apiVersion: 1
+datasources:
+  - name: PostgreSQL
+    type: postgres
+    url: localhost:5432
+    database: evidently
+    user: grafana
+    secureJsonData:
+      password: secret

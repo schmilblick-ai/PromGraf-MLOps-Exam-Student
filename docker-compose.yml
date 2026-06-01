@@ -1,5 +1,97 @@
 services:
+  bike-api:
+    build: ./src/api
+    container_name: bike-api
+    ports:
+      - "8080:8080"
+    #restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5    
+    networks:
+      - monitoring
+    volumes:
+        - ./data:/app/data                 # ← dossier data de l'hôte monté dans le container
+        - ./models:/app/models             # ← si le modèle joblib est sauvegardé là      
+        - ./src/api:/app/src/api           # montage pour --reload sur juste un fichier
+
   evaluation:
-    build: ./src/evaluation
+    build: ./src/evaluation/
+    container_name: evaluation_exam  
     depends_on:
-      - bike-api
+      bike-api:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    #expose:  # FIX000 pas de ports
+    #  - "9090"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployment/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:  # FIX000 3lignes
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+      - --web.external-url=/prometheus/    # ← obligatoire ✅
+      - --web.route-prefix=/prometheus/    # ← obligatoire ✅
+      - --web.enable-lifecycle             # ← active /-/reload
+    restart: always
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana_dashboard
+    env_file:
+      - .env  
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_USER=admon
+      - GF_SECURITY_ADMIN_PASSWORD=admon-admon
+    networks:
+      - monitoring
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+      # C'est sur ce port que Prometheus viendra "scraper" les métriques système.
+    volumes:
+      - /proc:/host/proc:ro
+      # Le répertoire '/proc' contient des informations vitales sur l'état du noyau Linux et des processus en cours (utilisation CPU par process, infos mémoire, etc.).
+      - /sys:/host/sys:ro
+      # Le répertoire '/sys' expose des informations sur les périphériques matériels et les configurations du noyau.
+      - /:/rootfs:ro
+      # C'est essentiel pour que Node Exporter puisse accéder aux informations sur l'utilisation de l'espace disque de l'hôte.
+    command:
+    # Ces commandes indiquent à Node Exporter où trouver les systèmes de fichiers de l'hôte que nous venons de monter via les volumes.
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/run/docker/netns/.+)$'
+    restart: always
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data: {}
+  grafana_data:

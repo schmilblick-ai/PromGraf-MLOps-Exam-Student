@@ -1,0 +1,24 @@
+{
+  "dashboard": {
+    "title": "Monitoring Prédictions Topics",
+    "panels": [
+      {
+        "type": "barchart",
+        "title": "Répartition des Topics (Dernière heure)",
+        "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "sum(increase(model_predictions_total[1h])) by (meta_label)",
+            "format": "table",
+            "legendFormat": "{{meta_label}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "short" }
+        }
+      }
+    ],
+    "schemaVersion": 37,
+    "editable": true
+  }
+}
