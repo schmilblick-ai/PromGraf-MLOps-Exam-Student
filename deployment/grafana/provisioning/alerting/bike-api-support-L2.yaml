@@ -13,7 +13,7 @@ groups:
               relativeTimeRange:
                 from: 600
                 to: 0
-              datasourceUid: cfobsja411b7kf
+              datasourceUid: prometheusuid00
               model:
                 editorMode: code
                 expr: bike_request_duration_seconds_sum{endpoint="/predict"}/bike_request_duration_seconds_count{endpoint="/predict"}
@@ -73,7 +73,7 @@ groups:
               relativeTimeRange:
                 from: 600
                 to: 0
-              datasourceUid: cfobsja411b7kf
+              datasourceUid: prometheusuid00
               model:
                 editorMode: code
                 expr: bike_model_rmse > 30
