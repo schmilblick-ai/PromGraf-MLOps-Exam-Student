@@ -3,7 +3,7 @@
 # 1. IMPORTS
 # ═══════════════════════════════════════
 from evidently import Report, Dataset, DataDefinition, Regression
-from evidently.metrics import MAE, RMSE, R2Score
+from evidently.metrics import MAE, RMSE, R2Score, MAPE
 from evidently.presets import DataDriftPreset, RegressionPreset
 import logging
 from contextlib import asynccontextmanager
@@ -16,15 +16,15 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn import model_selection
 import zipfile
 import pandas as pd
-from datetime import datetime , date, time
+from datetime import datetime , date, time as dt_time
+import time
 import io, typing
 from typing import Optional
 import joblib, pickle
 from pathlib import Path
-from pydantic import BaseModel
 from typing import List, Any, Dict
 import asyncio
-
+import sys, json
 # ═══════════════════════════════════════
 # 2. CONFIGURATION & CONSTANTES
 # ═══════════════════════════════════════
@@ -44,11 +44,11 @@ my_refer_loc :Path   = Path("../../models/Rerefences.csv")
 
 lstPeriods = []
 calendar = { 
-      "jan11"  : ['2011-01-01 00:00:00' , '2011-01-28 23:00:00'] 
-    , "feb11"  : ['2011-01-29 00:00:00' , '2011-02-28 23:00:00']          
-    , "week 1" : ['2011-01-29 00:00:00' , '2011-02-07 23:59:59']
-    , "week 2" : ['2011-02-07 00:00:00' , '2011-02-14 23:59:59']
-    , "week 3" : ['2011-02-15 00:00:00' , '2011-02-21 23:59:59']
+      "jan11"  : ['2011-01-01 00:00:00' , '2011-01-28 23:59:59'] 
+    , "feb11"  : ['2011-01-29 00:00:00' , '2011-02-28 23:59:59']          
+    , "week1_february" : ['2011-01-29 00:00:00' , '2011-02-07 23:59:59']
+    , "week2_february" : ['2011-02-07 00:00:00' , '2011-02-14 23:59:59']
+    , "week3_february" : ['2011-02-15 00:00:00' , '2011-02-21 23:59:59']
 }
 
 DATASET_URL = "https://archive.ics.uci.edu/static/public/275/bike+sharing+dataset.zip"
@@ -61,8 +61,8 @@ WEEKLY_PERIODS = {
     'week3_february': ('2011-02-15 00:00:00', '2011-02-21 23:00:00')
 }
 
-DEFAULT_EVAL_PERIOD =   calendar['week 1']
-DEFAULT_PERIOD_NAME = 'week 1'
+DEFAULT_EVAL_PERIOD =   calendar['week1_february']
+DEFAULT_PERIOD_NAME = 'week1_february'
 
 NUM_FEATS = ['temp', 'atemp', 'hum', 'windspeed', 'mnth', 'hr', 'weekday']
 CAT_FEATS = ['season', 'holiday', 'workingday', 'weathersit']
@@ -74,29 +74,19 @@ COLUMNS_FOR_EVALUATION_PAYLOAD = ALL_MODEL_FEATS + [TARGET, DTEDAY_COL_NAME]
 
 
 
-
-
-
-
-
 # état partagé — un simple dict évite le global
-app_state = {}
-
 
 # ═══════════════════════════════════════
 # 3. ÉTAT GLOBAL (lecture seule après startup)
 # ═══════════════════════════════════════
 @dataclass
 class AppState:
-    model: RandomForestRegressor | None = None  # type cecicela ou None = Valeur initial None
-    reference: pd.DataFrame      | None = None
-    ToogleTrafic : bool          | None = False
+    RFRegressor:   RandomForestRegressor | None = None  # type cecicela ou None = Valeur initial None
+    reference:     pd.DataFrame          | None = None
+    ToogleTrafic : bool                  | None = False
 
-app_state    = AppState()
+app_state  = AppState()
 metrics_lock = asyncio.Lock()
-
-
-
 
 # ═══════════════════════════════════════
 # 4. PROMETHEUS MÉTRIQUES
@@ -109,19 +99,24 @@ PROM_registry = CollectorRegistry()
 PROM_api_requests_total           = Counter('bike_requests_total','Total number of API requests',['endpoint', 'method', 'status_code'], registry=PROM_registry)
 PROM_api_request_duration_seconds = Histogram('bike_request_duration_seconds','duration of API requests',['endpoint', 'method', 'status_code'], registry=PROM_registry)
 #Une métrique de votre choix : Implémentez une métrique supplémentaire jugée pertinente pour le monitoring de ce modèle de régression
+#sur une régression on obtient juste une prédiction, pas de score
+#on peut juste représenté dans un gauge, ce qui a été prédit (ou le min et max des prédictions ?)
 #et des dérives (par exemple, model_mape_score, 
-PROM_data_drift_detected_status =Gauge("bike_data_drift_detected_status","Glissement de donnée",["??"], registry=PROM_registry)
+PROM_api_data_predict_level       = Gauge("bike_data_predict_level","Last data Prediction",['endpoint', 'method', 'status_code'], registry=PROM_registry)
 # Counter 'predictions_ok'
-PROM_predictions_ok = Counter('bike_predictions_ok','Number of predictions ok',['confidence_score'],registry=PROM_registry)
+PROM_api_predictions_ok           = Counter('bike_predictions_ok','Number of predictions ok',['endpoint', 'method', 'status_code'],registry=PROM_registry)
 
 #mise à jour via l'endpoint /evaluate).
-PROM_model_rmse_score             = Gauge('bike_model_rmse_score','Total number of API requests',['endpoint', 'method', 'status_code'], registry=PROM_registry)
-PROM_model_mae_score              = Gauge('bike_model_mae_score','Total number of API requests',['endpoint', 'method', 'status_code'], registry=PROM_registry)
-PROM_model_r2_score               = Gauge('bike_model_r2_score','Total number of API requests',['endpoint', 'method', 'status_code'], registry=PROM_registry)
+# pour mettre à jour cette section, cela se fait une fois les noms de métric découvert dans evidently du endpoint evaluate
+PROM_model_rmse             = Gauge('bike_model_rmse','Model RMSE'            ,['endpoint', 'method', 'status_code'], registry=PROM_registry)
+PROM_model_mape             = Gauge('bike_model_mape_mean' ,'model MAPE mean' ,['endpoint', 'method', 'status_code'], registry=PROM_registry)
+PROM_model_mae              = Gauge('bike_model_mae_mean' ,'model MAE mean'   ,['endpoint', 'method', 'status_code'], registry=PROM_registry)
+PROM_model_mae_std          = Gauge('bike_model_mae_std' ,'model MAE std'     ,['endpoint', 'method', 'status_code'], registry=PROM_registry)
+PROM_model_r2               = Gauge('bike_model_r2'  ,'Model R2'              ,['endpoint', 'method', 'status_code'], registry=PROM_registry)
+PROM_model_drift_count      = Gauge('bike_model_drift_count'  ,'Model col count drift' ,['endpoint', 'method', 'status_code'], registry=PROM_registry)
+PROM_model_drift_share      = Gauge('bike_model_drift_share'  ,'Model col share drift' ,['endpoint', 'method', 'status_code'], registry=PROM_registry)
+
 # ....
-
-
-
 
 
 
@@ -135,21 +130,26 @@ class Period(BaseModel):
     end: datetime
 
 class Periods(BaseModel):
-    items: Dict[str, Period]
+    #key et value
+    dict: Dict[str, Period]
+
+class PeriodName(BaseModel):
+    #'data': {'data': evaluation_data_payload, 'evaluation_period_name': period_name}
+    evaluation_period_name: str
 
 class BikeSharingInput(BaseModel):
-    temp: float = Field(..., example=0.24)
-    atemp: float = Field(..., example=0.2879)
-    hum: float = Field(..., example=0.81)
-    windspeed: float = Field(..., example=0.0)
-    mnth: int = Field(..., example=1)
-    hr: int = Field(..., example=0)
-    weekday: int = Field(..., example=6)
-    season: int = Field(..., example=1)
-    holiday: int = Field(..., example=0)
+    temp      : float = Field(..., example=0.24)
+    atemp     : float = Field(..., example=0.2879)
+    hum       : float = Field(..., example=0.81)
+    windspeed : float = Field(..., example=0.0)
+    mnth      : int = Field(..., example=1)
+    hr        : int = Field(..., example=0)
+    weekday   : int = Field(..., example=6)
+    season    : int = Field(..., example=1)
+    holiday   : int = Field(..., example=0)
     workingday: int = Field(..., example=0)
     weathersit: int = Field(..., example=1)
-    dteday: date = Field(..., example="2011-01-01", description="Date of the record in YYYY-MM-DD format.")
+    dteday    : date | None = Field(..., example="2011-01-01", description="Date of the record in YYYY-MM-DD format.") 
 
 class WeekEvaluationInput(BaseModel):
     data: List[BikeSharingInput] 
@@ -167,8 +167,9 @@ class EvaluationReportOutput(BaseModel):
     rmse: Optional[float]
     mape: Optional[float]
     mae: Optional[float]
-    r2score: Optional[float]
+    r2: Optional[float]
     drift_detected: int
+    drift_shr_detected: float
     evaluated_items: int
 
 class apiButton(BaseModel):
@@ -193,7 +194,7 @@ def _fetch_data0() -> pd.DataFrame:
     return raw_data
 
 def _process_data0(raw_data: pd.DataFrame) -> pd.DataFrame:
-    raw_data.index = raw_data.apply(lambda row: datetime.combine(row.dteday.date(), time(row.hr)), axis=1)
+    raw_data.index = raw_data.apply(lambda row: datetime.combine(row.dteday.date(), dt_time(row.hr)), axis=1)
     return raw_data
 
 
@@ -219,14 +220,12 @@ def _process_data(raw_data: pd.DataFrame) -> pd.DataFrame:
     print("Processing raw data...")
     raw_data['hr'] = raw_data['hr'].astype(int)
     raw_data.index = raw_data.apply(
-        lambda row: datetime.combine(row[DTEDAY_COL_NAME].date(), time(row.hr)),
+        lambda row: datetime.combine(row[DTEDAY_COL_NAME].date(), dt_time(row.hr)),
         axis=1
     )
     raw_data = raw_data.sort_index()
     print("Data processed successfully.")
     return raw_data
-
-
 
 
 # Gateway pour l'entrainement du modèle
@@ -269,22 +268,23 @@ def _train_and_predict_reference_model(reference_data) -> RandomForestRegressor:
 # ═══════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global app_state
     # ← tout ce qui est AVANT le yield = startup
     logger.info("🚀 Démarrage...")
     
-    #app_state["model"]          = joblib.load("models/model.pkl")
-    #app_state["reference_data"] = pd.read_csv("data/reference.csv")
+    #app_stat e["model"]          = joblib.load("models/model.pkl")
+    #app_stat e["reference_data"] = pd.read_csv("data/reference.csv")
 
     try:
         # load data
-        RFRegressor :RandomForestRegressor
 
         logger.info( f"my_model_loc.is_file() : {my_model_loc.is_file()}" ) 
+
 
         if my_model_loc.is_file():
             raw_data = _process_data(_fetch_data())
             with open(my_model_loc, "rb") as f:
-                RFRegressor = pickle.load(f)
+                app_state.RFRegressor = pickle.load(f)
 
             logger.info("Random forest Model loaded successfully")
         else:    
@@ -293,7 +293,7 @@ async def lifespan(app: FastAPI):
                 reference_jan11 = get_subset(raw_data,calendar["jan11"])
                 RFRegressor :RandomForestRegressor = _train_and_predict_reference_model(reference_jan11)
                 pickle.dump(RFRegressor, my_model_loc)
-        logger.info("Random forest Model not yet loaded run the train")
+            logger.info("Random forest Model not yet loaded : run the /train enpoint first")
     
 
     except Exception as e:
@@ -301,13 +301,11 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Failed to load ML model, application cannot start.") from e
 
 
-
-
     yield  # ← l'API tourne ici
     
     # ← tout ce qui est APRÈS le yield = shutdown
     logger.info("🔴 Arrêt propre de l'API")
-    app_state.clear()
+    del app_state
 
 ## STARTUP AREA
 logger.info("🚀 Démarrage de l'API...")
@@ -335,15 +333,15 @@ async def read_root():
 
 @app.get("/train")
 async def train_and_save():
-    start_time = time.time() 
+    start_time = time.perf_counter() 
     status_code = "200"
     try:
     
         raw_data = _process_data(_fetch_data())
         reference_jan11 = get_subset(raw_data,calendar["jan11"])
-        RFRegressor :RandomForestRegressor = _train_and_predict_reference_model(reference_jan11)
+        app_state.RFRegressor = _train_and_predict_reference_model(reference_jan11)
         with open(my_model_loc, "wb") as f:
-            pickle.dump(RFRegressor, f)
+            pickle.dump(app_state.RFRegressor, f)
         return {"message": "Success :🚀 To run a bike, take the train"}
     
     except HTTPException as e:
@@ -354,7 +352,7 @@ async def train_and_save():
         status_code = "500"
         raise HTTPException(status_code=500, detail=f"Prediction failed due to an internal error: {e}")
     finally:
-        end_time = time.time()
+        end_time = time.perf_counter()
         # Durée de la requête
         duration = end_time - start_time
         PROM_api_request_duration_seconds.labels(endpoint="/train", method="GET", status_code=status_code).observe(duration)
@@ -366,48 +364,53 @@ async def predict(BikeSharing: BikeSharingInput):
     """
     predict count count of  bike based on BikeSharing details.
     """
-    start_time = time.time() # Début du timer pour la durée de la requête
+    start_time = time.perf_counter() # Début du timer pour la durée de la requête
 
     status_code = "200"
-
+    #time.sleep(0.3)
     try:
         if app_state.RFRegressor == None:
             logger.warning("Model not loaded")
             status_code = "500"
             raise HTTPException(status_code=500, detail="Model was not yet loaded, please train before predicting")
-
-        results = app_state.RFRegressor.fit(BikeSharing) #will load the trained model
+        #On converti l'input en df et on projete sur les features
+        logger.info(BikeSharing)
+        inputdf = pd.DataFrame([BikeSharing.model_dump()])[numerical_features + categorical_features]
+        logger.info(inputdf)
+        #inputdf=BikeSharing.model_dump(exclude={"dteday"})
+        results = app_state.RFRegressor.predict(inputdf) #will predict with the trained model
+        logger.info(results)
 
         if not results:
 
             logger.error(f"RFRegressor returned empty results for text: {BikeSharing}...")
             status_code = "500"
             raise HTTPException(status_code=500, detail="Model could not regress the input.")
+                
+        # Incrementation du counter pour les predictions ok 
+        PROM_api_predictions_ok.labels(endpoint="/predict", method="POST",status_code=status_code).inc()
 
-        predicted_target = results
-        try:
-            confidence_score = results[0]['score']
-        except Exception as e:
-            logger.error(f"Error during score retrieval at results : {results}")
-        
-        # Incrementation du counter pour la 
-        PROM_predictions_ok.labels(endpoint="/predict", method="POST",confidence_score=confidence_score).inc()
+        logger.info(f"Predicted: '{BikeSharing}...' level count : '{results}'")
+        #push le score sur la gauge
+        PROM_api_data_predict_level.labels(endpoint="/predict", method="POST", status_code=status_code).set(results[0])
 
-
-        logger.info(f"Predicted: '{BikeSharing}...' into category: '{results}' with score: {confidence_score:.4f}")
-        return PredictionOutput(score=confidence_score)
+        return PredictionOutput(predicted_count=results[0])
 
     except HTTPException as e:
         status_code = str(e.status_code)
+        logger.info(f"except HTTPException:")
         raise
     except Exception as e:
-        logger.error(f"Error during prediction for text: {BikeSharing}... Error: {e}")
+        logger.error(f"Error during prediction for : {BikeSharing}... Error: {e}")
         status_code = "500"
+        logger.info(f"except Exception:")        
         raise HTTPException(status_code=500, detail=f"Prediction failed due to an internal error: {e}")
     finally:
-        end_time = time.time()
+        end_time = time.perf_counter()
         # Durée de la requête
         duration = end_time - start_time
+        #stock le quoi qu'il arrive
+        logger.info(f"finally:") 
         PROM_api_request_duration_seconds.labels(endpoint="/predict", method="POST", status_code=status_code).observe(duration)
         PROM_api_requests_total.labels(endpoint="/predict", method="POST", status_code=status_code).inc()
 
@@ -417,53 +420,74 @@ def health():
 
 @app.post("/toogle")
 def toogle(button: apiButton):
-    AppState.ToogleTrafic
-    return(AppState.ToogleTrafic)
+    app_state.ToogleTrafic = not app_state.ToogleTrafic
+    button.switch =  app_state.ToogleTrafic
+    return(button)
 
 @app.post("/evaluate/period")
 def evaluate_period(periods: Periods):
-    for name, period in Periods.periods.items():
+    logger.info(periods)
+    for name,period in periods.dict.items():
         logger.info(f"Période {name} : {period.start} → {period.end}")
-    return {"received": len(calendar.periods)}
+    return {"received": len(periods.dict)}
 
-# ✅ en sortie (response)
-@app.get("/getPeriods", response_model=Periods)
-def get_periods():
-    return Periods(items={
+#internal definition of calendars in various trial shapes
+calendar1=Periods(dict={
         "jan11"  : Period(start="2011-01-01 00:00:00", end="2011-01-28 23:59:59"),
         "feb11"  : Period(start="2011-02-01 00:00:00", end="2011-02-28 23:59:59"),
-        "week 1" : Period(start="2011-01-29 00:00:00", end="2011-02-07 23:59:59"),
-        "week 2" : Period(start="2011-02-07 00:00:00", end="2011-02-14 23:59:59"),
-        "week 3" : Period(start="2011-02-15 00:00:00", end="2011-02-21 23:59:59"),
+        "week1_february" : Period(start="2011-01-29 00:00:00", end="2011-02-07 23:59:59"),
+        "week2_february" : Period(start="2011-02-07 00:00:00", end="2011-02-14 23:59:59"),
+        "week3_february" : Period(start="2011-02-15 00:00:00", end="2011-02-21 23:59:59"),
     })
 
 calendar = { 
       "jan11"  : ['2011-01-01 00:00:00' , '2011-01-31 23:59:59'] 
     , "feb11"  : ['2011-02-01 00:00:00' , '2011-02-28 23:59:59']          
-    , "week 1" : ['2011-02-01 00:00:00' , '2011-02-08 23:59:59']
-    , "week 2" : ['2011-02-09 00:00:00' , '2011-02-15 23:59:59']
-    , "week 3" : ['2011-02-16 00:00:00' , '2011-02-22 23:59:59']
+    , "week1_february" : ['2011-02-01 00:00:00' , '2011-02-08 23:59:59']
+    , "week2_february" : ['2011-02-09 00:00:00' , '2011-02-15 23:59:59']
+    , "week3_february" : ['2011-02-16 00:00:00' , '2011-02-22 23:59:59']
 }
 
 
+
+# ✅ en sortie (response)
+@app.get("/getPeriods", response_model=Periods)
+def get_periods():
+    return calendar1
+
+
 @app.post("/setPeriods")
-def setWeeks(payload: Periods):
+def setWeeks(selectedPeriods: Periods):
     global lstPeriods
-    lstPeriods=payload.items
+    lstPeriods=selectedPeriods.dict
     return (lstPeriods)
 
 
+def get_by_name(results, name):
+    for k, v in results.items():
+        if v.display_name == name:
+            return v
+    return None
+
+
 @app.post("/evaluate", response_model=EvaluationReportOutput)
-def evaluate(payload: WeekEvaluationInput):
-    start_time = time.time() # Début du timer pour la durée de la requête
+#def evaluate(WeekEvaluation: WeekEvaluationInput):
+#def evaluate(aPeriodName: PeriodName):
+def evaluate(aPeriodName: EvaluationData):
+    start_time = time.perf_counter() # Début du timer pour la durée de la requête
     status_code = "200"
 
+    raw_data = _process_data(_fetch_data())
     # 1. Convertir le payload en DataFrame
-    current_df = pd.DataFrame([row.to_dict() for row in payload.data])
+    logger.info(aPeriodName.evaluation_period_name)
+
+    current_df = get_subset(raw_data,calendar[aPeriodName.evaluation_period_name])
+    #logger.info(current_df.shape)
     nbitems=current_df.shape[0]
+    logger.info(nbitems)
 
     # 2. Prédictions avec le modèle gelé
-    current_df[prediction] = RFRegressor.predict(current_df[numerical_features + categorical_features])
+    current_df[prediction] = app_state.RFRegressor.predict(current_df[numerical_features + categorical_features])
 
     # 3. Dataset Evidently wrappé
     data_definition = DataDefinition(
@@ -472,34 +496,98 @@ def evaluate(payload: WeekEvaluationInput):
     )
 
     #benchmark
+    raw_data = _process_data(_fetch_data())
     reference_jan11 = get_subset(raw_data,calendar["jan11"])
+    reference_jan11[prediction] = app_state.RFRegressor.predict(reference_jan11[numerical_features + categorical_features])
+
+    logger.info(current_df.shape)
+    logger.info(reference_jan11.shape)
+    
+    logger.info(current_df.head())
+
+    logger.info(reference_jan11.head())
+
+    logger.info(reference_jan11[[target, prediction]].isnull().sum())
+    logger.info(current_df[[target, prediction]].isnull().sum())
+    logger.info(reference_jan11[[target, prediction]].describe())
+    logger.info(current_df[[target, prediction]].describe())
+
     reference_dataset = Dataset.from_pandas(reference_jan11, data_definition=data_definition)
-    current_dataset   = Dataset.from_pandas(current_df,     data_definition=data_definition)
+    current_dataset   = Dataset.from_pandas(current_df     , data_definition=data_definition)
 
     # 4. Rapport Evidently
-    report = Report(metrics=[RegressionPreset(), DataDriftPreset()])
+    #initialisation des commandes de métriques, certaine métriques peuvent être en overlap entre des présets ou des demandes séparé
+    rmse, mape, mae, r2score,datadrift = RMSE(), MAPE(), MAE(), R2Score(), DataDriftPreset()
+    logger.info([rmse, mape, mae, r2score,datadrift])
+    #report = Report(metrics=[RegressionPreset(), rmse, mae, r2score,datadrift ])
+
+    #Construction du report evidently et Collection des métriques
+    report = Report(metrics=[rmse, mape, mae, r2score,datadrift ])
     snapshot = report.run(reference_data=reference_dataset, current_data=current_dataset)
 
-    # 5. Extraire les métriques de Evidently
+    # 5. Extraire les métriques de Evidently pour les envoyer vers prométhéus
+    # logger.info(snapshot)
+    # alors là, y a tout qui plance si on y prend garde - 
+    # la méthode va consister à afficher les métriques keys qu'on a fabriqué juste avant et
+    # à progressivement les push vers prometheus, en les définissant progressivement
+
     results = snapshot.metric_results
-    rmse  = results[RMSE()].current.value
-    mae   = results[MAE()].current.value
-    r2    = results[R2Score()].current.value
-    drift = results[DataDriftPreset()].drift_detected
 
-    # 6. Mettre à jour Prometheus
+    # AVOIR un affichage systématique des clefs de métrics obtenues et des labels associés
+    # objectif, savoir si un accés par clés ou par labels est approprié pour différencier les métriques du report
+    # récupération du tableau des cléfs de métric
+    resuKeys=list(results.keys())
+    # affichage du display name
+    for z in [(resuKeys[k],results[resuKeys[k]].display_name) for k in range(len(resuKeys))]:
+        logger.info(z)
+    #attention, je donne cette méthode, mais dans le debugger de vscode les quatre premières métrics ne sont jamais "display"
+
+    # logger.info(results) - RECUPERATION DES METRIQUES
+    rmse  = get_by_name(results, "RMSE")
+    mape  = get_by_name(results, "Mean Absolute Percentage Error")
+    mae   = get_by_name(results, "Mean Absolute Error")
+    r2    = get_by_name(results, "R2 Score")
+    drift = get_by_name(results, "Count of Drifted Columns")
+
+    # RECUPERATION DES VALEURS DES METRIQUES
+    # certaines métriques renvoient deux valeurs (mean, std) ou (count, share) par exemple
+    v_rmse    = rmse.value
+    logger.info(f"mape properties : {type(mape)}")
+    logger.info([a for a in dir(mape) if not a.startswith("_")])
+    # Ce qu'on apprend, evidently.core.metric_types.MeanStdValue dit que la métrique contient mean et std comme propriété
+    # see the litle specification "Metric result" in MAPE() ref https://docs.evidentlyai.com/metrics/all_metrics
+
+    v_mape    = mape.mean.value
+    v_mae     = mae.mean.value
+    v_mae_std = mae.std.value
+    v_r2      = r2.value
+    v_drift_count = drift.count.value
+    v_drift_share = drift.share.value
+
+    
+    # 6. Mettre à jour Prometheus en déclarant au dessus les métriques manquantes
     labels = {"endpoint": "/evaluate", "method": "POST", "status_code": "200"}
-    PROM_model_rmse_score.labels(**labels).set(rmse)
-    PROM_model_mae_score.labels(**labels).set(mae)
-    PROM_model_r2_score.labels(**labels).set(r2)
+    PROM_model_rmse.labels(**labels).set(v_rmse)
+    PROM_model_mape.labels(**labels).set(v_mape)
+    PROM_model_mae.labels(**labels).set(v_mae)
+    PROM_model_mae_std.labels(**labels).set(v_mae_std)
+    PROM_model_r2.labels(**labels).set(v_r2)
+    PROM_model_drift_count.labels(**labels).set(v_drift_count)
+    PROM_model_drift_share.labels(**labels).set(v_drift_share)
+    
+    #une fois définit, revoyer la définition des GAUGES en haut du script, attention, 
+    # il n'est pas vraiment possible de les définir ici can le registry prometheus de collect est global 
+    # CE PROCESS EST FASTIDIEUX SURTOUT SI ON DECOUVRE LES CHANGES EVIDENTLY
 
-
-    end_time = time.time()
+    end_time = time.perf_counter()
     # Durée de la requête
     duration = end_time - start_time
-    return EvaluationReportOutput(message="evaluation terminated in {duration}"
-            , rmse=rmse, mae=mae, r2=r2, drift_detected=drift
+    return EvaluationReportOutput(message=f"evaluation for {aPeriodName.evaluation_period_name} terminated in {duration:.3f}"
+            , rmse=v_rmse, mape=v_mape, mae=v_mae, r2=v_r2
+            , drift_detected=v_drift_count 
+            , drift_shr_detected=v_drift_share
             , evaluated_items= nbitems)
+
 
 @app.get("/metrics")
 async def metrics(request: Request):

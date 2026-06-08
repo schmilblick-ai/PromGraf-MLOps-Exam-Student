@@ -105,7 +105,7 @@ def run_evaluation(full_data: pd.DataFrame, period_name: str, start_date_str: st
         print(f"  - RMSE: {rmse_value:.4f}" if rmse_value is not None else "  - RMSE: N/A")
         print(f"  - MAPE: {mape_value:.4f}" if mape_value is not None else "  - MAPE: N/A")
         
-        print(f"  - Data Drift Detected: {'Yes' if result.get('drift_detected') == 1 else 'No'}")
+        print(f"  - Data Drift Detected: {'Yes' if result.get('drift_detected') >= 1 else 'No'}")
         print(f"  - Evaluated Items: {result.get('evaluated_items')}")
 
     except requests.exceptions.RequestException as e:
