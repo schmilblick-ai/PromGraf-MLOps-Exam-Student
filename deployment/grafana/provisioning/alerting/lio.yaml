@@ -1,0 +1,12 @@
+apiVersion: 1
+contactPoints:
+    - orgId: 1
+      name: lio
+      receivers:
+        - uid: ffobyd5ppts00d
+          type: email
+          settings:
+            addresses: lionel.gontier@gmail.com
+            singleEmail: false
+          disableResolveMessage: false
+
