@@ -24,7 +24,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfobsja411b7kf"
+        "uid": "prometheusuid00"
       },
       "description": "Taux de Requêtes",
       "fieldConfig": {
@@ -110,7 +110,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "code",
           "expr": " (sum by (endpoint) (rate(bike_requests_total[30m])))",
@@ -121,7 +121,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "code",
           "expr": "rate(bike_requests_total[5m])",
@@ -137,7 +137,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfobsja411b7kf"
+        "uid": "prometheusuid00"
       },
       "description": "la latence (P95)",
       "fieldConfig": {
@@ -223,7 +223,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum(rate(bike_request_duration_seconds_bucket[5m])) by (endpoint, le))",
@@ -239,7 +239,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfobsja411b7kf"
+        "uid": "prometheusuid00"
       },
       "description": "Assez difficile de faire des erreurs dans un prédict de régression et la malformation d'URL est capté par pydantic et ne permet pas de rentrer dans l'endpoint simplement. Donc à date je n'ai que des codes 200.",
       "fieldConfig": {
@@ -325,7 +325,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "builder",
           "expr": "sum by(endpoint, status_code) (bike_requests_total{status_code!=\"200\"})",
@@ -336,7 +336,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "code",
           "expr": "bike_request_duration_seconds",

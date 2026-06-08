@@ -23,7 +23,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfobsja411b7kf"
+        "uid": "prometheusuid00"
       },
       "fieldConfig": {
         "defaults": {
@@ -85,7 +85,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "code",
           "expr": "bike_model_rmse",
@@ -101,7 +101,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfobsja411b7kf"
+        "uid": "prometheusuid00"
       },
       "fieldConfig": {
         "defaults": {
@@ -163,7 +163,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "code",
           "expr": "bike_model_mae_mean",
@@ -179,7 +179,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfobsja411b7kf"
+        "uid": "prometheusuid00"
       },
       "fieldConfig": {
         "defaults": {
@@ -241,7 +241,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "code",
           "expr": "bike_model_r2",
@@ -257,7 +257,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "cfobsja411b7kf"
+        "uid": "prometheusuid00"
       },
       "description": "pourcentage de column en drift",
       "fieldConfig": {
@@ -323,7 +323,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "cfobsja411b7kf"
+            "uid": "prometheusuid00"
           },
           "editorMode": "builder",
           "expr": "bike_model_drift_share",
