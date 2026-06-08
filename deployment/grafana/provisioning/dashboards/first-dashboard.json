@@ -64,7 +64,7 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "prometheusuid00"
+                        "name": "Prometheus"
                       },
                       "spec": {
                         "editorMode": "builder",
@@ -236,7 +236,7 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "prometheusuid00"
+                        "name": "Prometheus"
                       },
                       "spec": {
                         "editorMode": "builder",
@@ -338,7 +338,7 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "prometheusuid00"
+                        "name": "Prometheus"
                       },
                       "spec": {
                         "editorMode": "builder",
@@ -422,7 +422,7 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "prometheusuid00"
+                        "name": "Prometheus"
                       },
                       "spec": {
                         "editorMode": "code",
@@ -518,7 +518,7 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "prometheusuid00"
+                        "name": "Prometheus"
                       },
                       "spec": {
                         "editorMode": "code",
@@ -614,7 +614,7 @@
                       "group": "prometheus",
                       "version": "v0",
                       "datasource": {
-                        "name": "prometheusuid00"
+                        "name": "Prometheus"
                       },
                       "spec": {
                         "editorMode": "code",
