@@ -11,7 +11,9 @@ J'ai testé sur une autre machine. Attention toutefois à des dockers containers
 
 `make stop` :: tout arréter
 
-`make traffic` :: pour générer du traffic sur le endpoint prédict. génération aléatoire de 1 à 60 prédict par paquet de 10.
+`make traffic` :: pour générer du traffic sur le endpoint `/predict`. génération aléatoire de 1 à 60 predicts par paquets de 10.
+
+`make evaluate` :: build et lance un evaluate pour la correction.
 
 `http://youhost:8080/`  :: pour accéder au swagger de l'API
 - on peut faire un /predict à la main
@@ -21,7 +23,7 @@ J'ai testé sur une autre machine. Attention toutefois à des dockers containers
 
 `docker logs -f container` :: pour les intimes ragards dans les logs
 
-recommandaton d'usage :
+Recommandaton d'usage :
 - dézip ou clone du projet sur la vm
 - à la racine, `make all`
 - ouverture du swagger http://liora-vm-77gi:8080/docs
