@@ -55,7 +55,7 @@ services:
     image: grafana/grafana:latest
     container_name: grafana_dashboard
     env_file:
-      - .env  
+      - .env.example  
     ports:
       - "3000:3000"
     volumes:

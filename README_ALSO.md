@@ -6,6 +6,7 @@ Dans ce compte rendu, nous listerons les quelques commandes de prise en main du 
 
 `make all` :: pour lancer tout les dockers
 normalement, sur un pc/vm vierge, tous les éléments du "provisioning" seront disponibles à nouveau pour évaluation.
+Cela permet de résoudre le mot de passe pour grafana à l'installation - et à part pour un reload de provisioning, il n'y a pas besoin de ce mot de passe à l'usage.
 
 J'ai testé sur une autre machine. Attention toutefois à des dockers containers grafana d'autres projets, un `docker container prune` peut être due - voire un remove.
 
@@ -31,7 +32,29 @@ Recommandaton d'usage :
 - ouverture de grafana http://liora-vm-77gi:3000/
 
 
+## .env file
+ce fichier était initialement configuré dans docker-compose.yml, mais il est resté vide pour l'exercice.
+non distribué du fait du .gitignore, donc j'ajoute un .env.example commenté et je l'inclu dans le docker-compose.yml pour faciliter l'évaluation.
 
+Je document un usage possible - mais qui n'est pas mis en oeuvre dans la réponse livré.
+```
+# .env
+GF_SECURITY_ADMIN_USER=admin
+GF_SECURITY_ADMIN_PASSWORD=monmotdepasse
+GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION=false
+
+# Désactiver l'invitation à changer le mot de passe au premier login :
+GF_AUTH_DISABLE_LOGIN_FORM=false
+GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_password  # alternative via Docker secrets
+
+# Important — ces variables ne fonctionnent qu'au premier démarrage sur un volume vierge. Si grafana.db 
+# existe déjà dans le volume, le mot de passe est ignoré et il faut utiliser le reset :
+
+```
+## suggestion de metric supplémentaire pour le suivi
+j'ai choisi le PROM_model_drift_count et PROM_model_drift_share comme métrics simples permettant d'avoir un
+résumé du nombre de colonnes potentiellement impacté par un changement significatif de distribution,
+comme indicateur de l'enthropie du model.
 
 ## Exploration de grafana et stratégie de mise à jour
 Autant les premiers graphiques ou configuration grafana sont à peu près intuitives, en allant chercher des métriques prometheus dans sa datasource, autant on ne soupconne pas les exercices d'équilibriste pour échanger ou transporter des définitions graphiques entre environement. Aussi le concepte de "dashboard as code" arrive relativement vite, avec une spécification complète du modèle objet des assets graphiques en json ou en yaml.
